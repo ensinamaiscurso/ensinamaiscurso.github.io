@@ -56,6 +56,12 @@ h1,h2,h3,.brandcopy strong,.stat .num{font-family:Manrope,"DM Sans",Inter,system
 .qb-generate:disabled,.qb-send:disabled{opacity:.65;cursor:wait}
 .qb-account-status{font-size:12px;color:var(--muted);line-height:1.5}
 .qb-account-status.ok{color:#27845d}.qb-account-status.error{color:#c84c62}
+.qb-recovery-panel{margin-top:13px;padding:14px;border:1px solid #f0d5e1;border-radius:12px;background:#fff8fb}
+.qb-recovery-panel h3{margin:0 0 5px;font-size:14px;color:#91385f}
+.qb-recovery-panel p{margin:0 0 11px;font-size:12px;color:#806b76;line-height:1.45}
+.qb-recovery-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:11px}
+.qb-recovery-fields .field input{background:#fff}
+@media(max-width:600px){.qb-recovery-fields{grid-template-columns:1fr}}
 .qb-setup{border-top:1px solid var(--line);margin-top:12px;padding-top:10px}.qb-setup summary{font-weight:750;color:#a33b6b;font-size:12px;cursor:pointer}
 .qb-chat-log{min-height:205px;max-height:410px;overflow:auto;padding:5px 2px 12px;display:grid;align-content:start;gap:12px}
 .qb-welcome{text-align:center;padding:19px 12px;color:var(--muted)}.qb-welcome-mark{width:42px;height:42px;border-radius:14px;background:var(--pink);color:white;font-weight:900;display:grid;place-items:center;margin:0 auto 10px}
@@ -140,6 +146,15 @@ h1,h2,h3,.brandcopy strong,.stat .num{font-family:Manrope,"DM Sans",Inter,system
       <div class="card qb-connection">
         <div class="sectionhead" style="margin-top:0"><div><h2>Conexão segura</h2><p class="muted" style="font-size:12px;margin:4px 0 0">Necessária para usar a IA e sincronizar a biblioteca.</p></div><span class="pill warn" id="qbConnectionBadge">Não conectado</span></div>
         <div id="qbAccountStatus" class="qb-account-status">Configure seu projeto Supabase e entre com a conta autorizada da professora.</div>
+        <div id="qbPasswordRecoveryPanel" class="qb-recovery-panel hidden" role="region" aria-live="polite">
+          <h3>Definir uma nova senha</h3>
+          <p>O link de recuperação foi reconhecido. Crie uma senha nova para a conta do Ensina+ (mínimo de 10 caracteres).</p>
+          <div class="qb-recovery-fields">
+            <div class="field"><label for="qbNewPassword">Nova senha</label><input id="qbNewPassword" type="password" autocomplete="new-password" minlength="10" placeholder="Digite a nova senha"></div>
+            <div class="field"><label for="qbConfirmNewPassword">Confirmar nova senha</label><input id="qbConfirmNewPassword" type="password" autocomplete="new-password" minlength="10" placeholder="Repita a nova senha"></div>
+          </div>
+          <button class="btn small" id="qbSaveNewPasswordBtn" onclick="qbFinishPasswordRecovery()">Salvar nova senha</button>
+        </div>
         <details class="qb-setup">
           <summary>Configurar Supabase e conta</summary>
           <div class="formgrid" style="margin-top:12px">
@@ -242,10 +257,13 @@ document.getElementById('attendanceDate').value=todayISO();renderAll();
 /* ENSINA+ 2.0 — Banco de Questões, IA segura e biblioteca */
 const QB_CONFIG_KEY='ensinamais_qb_supabase_config_v1';
 let qbClient=null,qbCurrentPack=null,qbCurrentRecordId=null,qbMessages=[],qbLibraryCache=[];
+let qbAuthSubscription=null;
 function qbEsc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function qbSetStatus(message,type=''){const el=document.getElementById('qbAccountStatus');if(el){el.textContent=message;el.className='qb-account-status '+type}const b=document.getElementById('qbConnectionBadge');if(b){b.textContent=type==='ok'?'Conectado':type==='error'?'Verificar conexão':'Não conectado';b.className='pill '+(type==='ok'?'ok':type==='error'?'bad':'warn')}}
 function qbGetConfig(){try{return JSON.parse(localStorage.getItem(QB_CONFIG_KEY)||'{}')}catch(e){return{}}}
-function qbMakeClient(){const c=qbGetConfig();if(!c.url||!c.key||!window.supabase?.createClient){qbClient=null;return null}try{qbClient=window.supabase.createClient(c.url,c.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});return qbClient}catch(e){qbClient=null;return null}}
+function qbShowPasswordRecovery(){const panel=document.getElementById('qbPasswordRecoveryPanel');if(panel){panel.classList.remove('hidden');document.getElementById('qbNewPassword')?.focus()}qbSetStatus('Recuperação de senha identificada. Defina uma nova senha abaixo.','ok')}
+async function qbFinishPasswordRecovery(){const password=document.getElementById('qbNewPassword')?.value||'',confirmPassword=document.getElementById('qbConfirmNewPassword')?.value||'',btn=document.getElementById('qbSaveNewPasswordBtn');if(!qbClient){qbSetStatus('Não foi possível conectar ao Supabase. Recarregue a página e abra um novo link de recuperação.','error');return}if(password.length<10){alert('A nova senha precisa ter pelo menos 10 caracteres.');return}if(password!==confirmPassword){alert('As duas senhas não coincidem. Confira e tente novamente.');return}try{if(btn)btn.disabled=true;qbSetStatus('Salvando a nova senha…');const {error}=await qbClient.auth.updateUser({password});if(error)throw error;document.getElementById('qbNewPassword').value='';document.getElementById('qbConfirmNewPassword').value='';document.getElementById('qbPasswordRecoveryPanel')?.classList.add('hidden');qbSetStatus('Senha atualizada com sucesso. Você já pode entrar no Ensina+ com a nova senha.','ok');await qbLoadLibrary()}catch(e){qbSetStatus(e.message||'Não foi possível atualizar a senha. Abra um novo link de recuperação e tente novamente.','error')}finally{if(btn)btn.disabled=false}}
+function qbMakeClient(){const c=qbGetConfig();if(!c.url||!c.key||!window.supabase?.createClient){qbClient=null;return null}try{qbClient=window.supabase.createClient(c.url,c.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});qbAuthSubscription=qbClient.auth.onAuthStateChange((event)=>{if(event==='PASSWORD_RECOVERY')qbShowPasswordRecovery()});return qbClient}catch(e){qbClient=null;return null}}
 async function qbInit(){const c=qbGetConfig();if(c.url)document.getElementById('qbSupabaseUrl').value=c.url;if(c.key)document.getElementById('qbSupabaseKey').value=c.key;qbMakeClient();if(qbClient){const {data,error}=await qbClient.auth.getSession();if(error)qbSetStatus('Não foi possível recuperar a sessão. Entre novamente.','error');else if(data.session){qbSetStatus('Sessão ativa: '+(data.session.user.email||'conta autorizada'),'ok');qbLoadLibrary()}else qbSetStatus('Conexão configurada. Entre com a conta autorizada da professora.')} }
 function qbSaveConnection(){const url=document.getElementById('qbSupabaseUrl').value.trim().replace(/\/+$/,''),key=document.getElementById('qbSupabaseKey').value.trim();if(!/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(url)){alert('Informe a URL HTTPS válida do projeto Supabase.');return}if(!key){alert('Informe a chave pública (publishable ou anon) do Supabase.');return}localStorage.setItem(QB_CONFIG_KEY,JSON.stringify({url,key}));if(!qbMakeClient()){qbSetStatus('Não foi possível iniciar o cliente Supabase. Verifique a URL e a chave.','error');return}qbSetStatus('Conexão salva. Agora entre com a conta autorizada.');alert('Conexão salva neste navegador. A chave secreta do Gemini deve ser configurada nos Secrets do Supabase, nunca aqui.')}
 async function qbSignIn(){try{if(!qbClient)qbSaveConnection();if(!qbClient)return;const email=document.getElementById('qbEmail').value.trim(),password=document.getElementById('qbPassword').value;if(!email||!password){alert('Informe e-mail e senha.');return}qbSetStatus('Autenticando…');const {data,error}=await qbClient.auth.signInWithPassword({email,password});if(error)throw error;qbSetStatus('Conectado como '+data.user.email,'ok');await qbLoadLibrary()}catch(e){qbSetStatus(e.message||'Falha ao entrar.','error')}}
